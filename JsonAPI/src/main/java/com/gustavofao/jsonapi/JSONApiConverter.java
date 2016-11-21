@@ -310,23 +310,25 @@ public class JSONApiConverter {
         //Termina os atributos
         //Inicia os relationships
         if (!jsonObject.isNull("relationships")) {
+            Map<String, Resource> relationshipMap = new HashMap<>();
             JSONObject relationships = jsonObject.getJSONObject("relationships");
             Iterator <String> keys = relationships.keys();
-            while (keys.hasNext()) {
-                String key = keys.next();
-                JSONObject eachRelation = relationships.getJSONObject(key);
+            if (fieldsHash.containsKey("relationships")) {
+                Field field = fieldsHash.get("relationships");
+                Boolean oldAccessible = field.isAccessible();
+                field.setAccessible(true);
 
-                Object data = eachRelation.get("data");
+                while (keys.hasNext()) {
+                    String key = keys.next();
+                    JSONObject eachRelation = relationships.getJSONObject(key);
 
-                if (data == null || data == JSONObject.NULL) {
-                    //Forcing the data to be an actual object in order to keep parsing the links on data:null
-                    data = new JSONArray();
-                }
+                    Object data = eachRelation.get("data");
+                    Object links = eachRelation.get("links");
 
-                if (fieldsHash.containsKey(key)){
-                    Field field = fieldsHash.get(key);
-                    Boolean oldAccessible = field.isAccessible();
-                    field.setAccessible(true);
+                    if (data == null || data == JSONObject.NULL) {
+                        //Forcing the data to be an actual object in order to keep parsing the links on data:null
+                        data = new JSONArray();
+                    }
 
                     if (data instanceof JSONObject) {
                         JSONObject dataJson = (JSONObject) data;
@@ -340,7 +342,7 @@ public class JSONApiConverter {
                                 String id = dataJson.getString("id");
                                 String type = dataJson.getString("type");
 
-                                fieldValue = classesIndex.get(type).newInstance();
+                                fieldValue = classesIndex.get("relationships").newInstance();
 
                                 Field idField = Resource.class.getDeclaredField("id");
                                 boolean oldAcessible = idField.isAccessible();
@@ -348,34 +350,44 @@ public class JSONApiConverter {
                                 idField.setAccessible(true);
                                 idField.set(fieldValue, id);
                                 idField.setAccessible(oldAcessible);
+
+                                Field typeField = Resource.class.getDeclaredField("type");
+                                oldAcessible = typeField.isAccessible();
+
+                                typeField.setAccessible(true);
+                                typeField.set(fieldValue, type);
+                                typeField.setAccessible(oldAcessible);
                             } else {
                                 fieldValue = resourceFromJson(dataJson, includes);
                             }
                         }
 
-                        if (fieldValue != null) {
-                            if (!dataJson.isNull("links")) {
-                                fieldValue.getClass().getDeclaredField("links")
-                                        .set(fieldValue, linksFromJson(((JSONObject) data)
-                                                .getJSONObject("links")));
-                            }
 
-                            field.set(resource, fieldValue);
-                        }
+                        if (fieldValue == null)
+                            fieldValue = classesIndex.get("relationships").newInstance();
+
+                        JSONObject linksJson = (JSONObject) links;
+                        if (linksJson != null)
+                            ((Resource) fieldValue).setLinks(linksFromJson(linksJson));
+
+                        //field.set(resource, fieldValue);
+                        relationshipMap.put(key, (Resource) fieldValue);
+
                     } else if (data instanceof JSONArray) {
-                        JSONList<Resource> relationList = new JSONList<>();
+                        //JSONList<Resource> relationList = new JSONList<>();
                         JSONArray dataJson = (JSONArray) data;
+                        Resource fieldValue = null;
 
                         for (int i = 0; i < dataJson.length(); i++) {
                             String keyRelation = getResourceTag(dataJson.getJSONObject(i));
                             if (includes.get(keyRelation) != null) {
-                                relationList.add(includes.get(keyRelation));
+                                relationshipMap.put(key, includes.get(keyRelation));
                             } else {
                                 if (dataJson.getJSONObject(i).isNull("attributes")) {
                                     String id = dataJson.getJSONObject(i).getString("id");
                                     String type = dataJson.getJSONObject(i).getString("type");
 
-                                    Resource fieldValue = classesIndex.get(type).newInstance();
+                                    fieldValue = classesIndex.get("relationships").newInstance();
 
                                     Field idField = Resource.class.getDeclaredField("id");
                                     boolean oldAcessible = idField.isAccessible();
@@ -384,21 +396,28 @@ public class JSONApiConverter {
                                     idField.set(fieldValue, id);
                                     idField.setAccessible(oldAcessible);
 
-                                    relationList.add(fieldValue);
+                                    Field typeField = Resource.class.getDeclaredField("type");
+                                    oldAcessible = typeField.isAccessible();
+
+                                    typeField.setAccessible(true);
+                                    typeField.set(fieldValue, type);
+                                    typeField.setAccessible(oldAcessible);
+
+                                    //relationList.add(fieldValue);
+                                    relationshipMap.put(key, fieldValue);
                                 } else {
-                                    relationList.add(resourceFromJson(dataJson.getJSONObject(i), includes));
+                                    relationshipMap.put(key, resourceFromJson(dataJson.getJSONObject(i), includes));
+                                    //relationList.add(resourceFromJson(dataJson.getJSONObject(i), includes));
                                 }
                             }
                         }
-
-                        if (!eachRelation.isNull("links")) {
-                            relationList.setLinks(linksFromJson(eachRelation.getJSONObject("links")));
-                        }
-
-                        field.set(resource, relationList);
                     }
-                    field.setAccessible(oldAccessible);
                 }
+
+                field.set(resource, relationshipMap);
+
+                field.setAccessible(oldAccessible);
+
             }
         }
 
