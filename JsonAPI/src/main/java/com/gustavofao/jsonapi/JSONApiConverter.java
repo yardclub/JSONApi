@@ -128,18 +128,23 @@ public class JSONApiConverter {
                     if (data instanceof JSONObject) {
                         //Single Object
                         JSONObject objectData = (JSONObject) data;
+                        if (!objectData.isNull("links"))
+                            jsonApiObject.setLinks(linksFromJson(objectData.getJSONObject("links")));
+
                         jsonApiObject.addData(resourceFromJson(objectData, includes));
                     } else if (data instanceof JSONArray) {
                         //ListObjects
                         JSONArray objectData = (JSONArray) data;
                         for (int i = 0; i < objectData.length(); i++) {
-                            jsonApiObject.addData(resourceFromJson(objectData.getJSONObject(i), includes));
+                            JSONObject obj = objectData.getJSONObject(i);
+                            Resource rez = resourceFromJson(obj, includes);
+                            if (!obj.isNull("links"))
+                                rez.setLinks(linksFromJson(obj.getJSONObject("links")));
+                            jsonApiObject.addData(rez);
                         }
                     }
-                }
 
-                if (!json.isNull("links"))
-                    jsonApiObject.setLinks(linksFromJson(json.getJSONObject("links")));
+                }
 
                 Field hasErrors = jsonApiObject.getClass().getDeclaredField("hasErrors");
                 boolean oldAcessible = hasErrors.isAccessible();
